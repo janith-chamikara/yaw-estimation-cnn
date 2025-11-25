@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -9,12 +10,16 @@ from dataset import TunnelDataset
 DATASET_PATH = "/home/janith/Downloads/MEGA/drone_dataset/50_tunnels_4000_per_tunnel"
 BATCH_SIZE = 64
 LEARNING_RATE = 0.001
-EPOCHS = 50  # The paper did 400
+EPOCHS = 400  # The paper did 400
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def main():
     print(f"Training on device: {DEVICE}")
+
+    if not os.path.exists("checkpoints"):
+        os.makedirs("checkpoints")
+        print("Created 'checkpoints' folder.")
 
     # 1. Prepare Dataset
     full_dataset = TunnelDataset(DATASET_PATH, cache_to_ram=False)
@@ -37,8 +42,10 @@ def main():
 
     # If Val Loss doesn't improve for 5 epochs, cut LR in half (0.5)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', patience=10, factor=0.5
+        optimizer, mode='min', patience=15, factor=0.5
     )
+
+    best_val_loss = float('inf')
 
     # 3. Training Loop
     for epoch in range(EPOCHS):
@@ -80,9 +87,16 @@ def main():
 
         scheduler.step(avg_val_loss)
 
-        # Save checkpoint every 10 epochs
-        if (epoch + 1) % 10 == 0:
-            torch.save(model.state_dict(), f"uav_yaw_net_epoch_{epoch+1}.pth")
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            torch.save(model.state_dict(),
+                       f"uav_yaw_net_best.pth")
+            print(
+                f"   >>> New Best Model Saved! Epoch : {epoch+1} (Loss: {best_val_loss:.5f})")
+
+        checkpoint_path = os.path.join(
+            "checkpoints", f"uav_yaw_net_epoch_{epoch+1}.pth")
+        torch.save(model.state_dict(), checkpoint_path)
 
     # 4. Final Save
     torch.save(model.state_dict(), "uav_yaw_net_final.pth")
